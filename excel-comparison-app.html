@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel Comparison</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header text-center">
+                        <h4 class="text-black">Excel Comparison</h4>
+                    </div>
+                    <div class="card-body">
+                        <form id="fileForm">
+                            <div class="form-group">
+                                <label for="masterFile" class="text-black">Upload Master File</label>
+                                <input type="file" class="form-control" id="masterFile">
+                            </div>
+
+                            <div class="form-group mt-3">
+                                <label for="secondaryFile" class="text-black">Upload Secondary File</label>
+                                <input type="file" class="form-control" id="secondaryFile">
+                            </div>
+
+                            <button type="button" class="btn btn-warning text-white mt-3 w-100" id="compareButton">Compare</button>
+                        </form>
+
+                        <!-- Display Comparison Results -->
+                        <div id="comparisonResult" class="mt-4" style="display:none;">
+                            <h5 class="text-black">Comparison Result</h5>
+                            <table class="table table-bordered">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Master Amount</th>
+                                        <th>Secondary Amount</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="comparisonTableBody"></tbody>
+                            </table>
+
+                            <!-- Download Button -->
+                            <button class="btn btn-success mt-3" id="downloadButton" style="display:none;">Download Results</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('compareButton').addEventListener('click', function() {
+            const masterFileInput = document.getElementById('masterFile');
+            const secondaryFileInput = document.getElementById('secondaryFile');
+            
+            if (!masterFileInput.files.length || !secondaryFileInput.files.length) {
+                alert('Please upload both files.');
+                return;
+            }
+
+            // Read the files as arrays
+            const masterFile = masterFileInput.files[0];
+            const secondaryFile = secondaryFileInput.files[0];
+            
+            const reader1 = new FileReader();
+            const reader2 = new FileReader();
+
+            reader1.onload = function(event) {
+                const masterData = XLSX.read(event.target.result, { type: 'binary' }).Sheets[Object.keys(XLSX.read(event.target.result, { type: 'binary' }).Sheets)[0]];
+                const masterRows = XLSX.utils.sheet_to_json(masterData, { header: 1 });
+
+                reader2.onload = function(event) {
+                    const secondaryData = XLSX.read(event.target.result, { type: 'binary' }).Sheets[Object.keys(XLSX.read(event.target.result, { type: 'binary' }).Sheets)[0]];
+                    const secondaryRows = XLSX.utils.sheet_to_json(secondaryData, { header: 1 });
+
+                    // Compare the two files
+                    const result = compareFiles(masterRows, secondaryRows);
+
+                    displayComparisonResult(result);
+                    enableDownload(result);
+                };
+                reader2.readAsBinaryString(secondaryFile);
+            };
+            reader1.readAsBinaryString(masterFile);
+        });
+
+        function compareFiles(masterData, secondaryData) {
+            const result = [];
+            const processedSecondaryIds = [];
+
+            // Process master data
+            masterData.forEach(masterRow => {
+                const masterId = masterRow[0]; // Assuming ID is in the first column
+                let masterAmount = normalizeAmount(masterRow[1]); // Normalize amount
+                let status = 'Missing';
+                let secondaryAmount = null;
+
+                // Default masterAmount to 0.00 if not valid
+                if (isNaN(parseFloat(masterRow[1]))) {
+                    masterAmount = "0.00";
+                }
+
+                secondaryData.forEach(secondaryRow => {
+                    if (secondaryRow[0] === masterId) {
+                        secondaryAmount = normalizeAmount(secondaryRow[1]);
+                        status = (secondaryAmount === masterAmount) ? 'Same' : 'Not the Same';
+                        processedSecondaryIds.push(secondaryRow[0]);
+                    }
+                });
+
+                result.push({
+                    ID: masterId,
+                    MasterAmount: masterAmount,
+                    SecondaryAmount: secondaryAmount || "0.00",
+                    Status: status
+                });
+            });
+
+            // Handle secondary data missing in master
+            secondaryData.forEach(secondaryRow => {
+                if (!processedSecondaryIds.includes(secondaryRow[0])) {
+                    const secondaryAmount = normalizeAmount(secondaryRow[1]);
+                    result.push({
+                        ID: secondaryRow[0],
+                        MasterAmount: "0.00",
+                        SecondaryAmount: secondaryAmount,
+                        Status: 'Missing in Master'
+                    });
+                }
+            });
+
+            return result;
+        }
+        
+
+        function normalizeAmount(amount) {
+            return parseFloat(amount || 0).toFixed(2);
+        }
+
+        function displayComparisonResult(result) {
+            const tableBody = document.getElementById('comparisonTableBody');
+            tableBody.innerHTML = ''; // Clear previous results
+
+            result.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${row.ID}</td><td>${row.MasterAmount}</td><td>${row.SecondaryAmount}</td><td>${row.Status}</td>`;
+                tableBody.appendChild(tr);
+            });
+
+            document.getElementById('comparisonResult').style.display = 'block';
+        }
+
+        function enableDownload(result) {
+            // Create Excel file with the comparison result
+            const ws = XLSX.utils.json_to_sheet(result);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Comparison Results');
+
+            // Enable download button and attach click event to trigger download
+            document.getElementById('downloadButton').style.display = 'inline-block';
+            document.getElementById('downloadButton').addEventListener('click', function() {
+                XLSX.writeFile(wb, 'comparison_results.xlsx');
+            });
+        }
+    </script>
+</body>
+</html>
