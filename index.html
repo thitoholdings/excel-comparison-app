@@ -6,6 +6,7 @@
     <title>Excel Comparison</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </head>
 <body>
     <div class="container mt-5">
@@ -19,20 +20,18 @@
                         <form id="fileForm">
                             <div class="form-group">
                                 <label for="masterFile" class="text-black">Upload Master File</label>
-                                <input type="file" class="form-control" id="masterFile">
+                                <input type="file" class="form-control" id="masterFile" accept=".xlsx, .xls">
                             </div>
-
                             <div class="form-group mt-3">
                                 <label for="secondaryFile" class="text-black">Upload Secondary File</label>
-                                <input type="file" class="form-control" id="secondaryFile">
+                                <input type="file" class="form-control" id="secondaryFile" accept=".xlsx, .xls">
                             </div>
-
                             <button type="button" class="btn btn-warning text-white mt-3 w-100" id="compareButton">Compare</button>
                         </form>
 
-                        <!-- Display Comparison Results -->
                         <div id="comparisonResult" class="mt-4" style="display:none;">
                             <h5 class="text-black">Comparison Result</h5>
+                            <p><strong>Secondary File Records:</strong> <span id="secondaryCount"></span></p>
                             <table class="table table-bordered">
                                 <thead>
                                     <tr>
@@ -44,8 +43,6 @@
                                 </thead>
                                 <tbody id="comparisonTableBody"></tbody>
                             </table>
-
-                            <!-- Download Button -->
                             <button class="btn btn-success mt-3" id="downloadButton" style="display:none;">Download Results</button>
                         </div>
                     </div>
@@ -54,90 +51,126 @@
         </div>
     </div>
 
+    <!-- Modal for Confirmation -->
+    <div class="modal fade" id="idConfirmationModal" tabindex="-1" aria-labelledby="idConfirmationModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="idConfirmationModalLabel">ID Confirmation</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are all IDs exactly 9 digits? If they are all 9 digits please proceed.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="confirmIdButton">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
-        document.getElementById('compareButton').addEventListener('click', function() {
+        let filesToCompare = {};
+
+        document.getElementById('compareButton').addEventListener('click', function () {
             const masterFileInput = document.getElementById('masterFile');
             const secondaryFileInput = document.getElementById('secondaryFile');
-            
+
             if (!masterFileInput.files.length || !secondaryFileInput.files.length) {
                 alert('Please upload both files.');
                 return;
             }
 
-            // Read the files as arrays
-            const masterFile = masterFileInput.files[0];
-            const secondaryFile = secondaryFileInput.files[0];
-            
+            filesToCompare.master = masterFileInput.files[0];
+            filesToCompare.secondary = secondaryFileInput.files[0];
+
+            // Show confirmation modal
+            const modal = new bootstrap.Modal(document.getElementById('idConfirmationModal'));
+            modal.show();
+        });
+
+        document.getElementById('confirmIdButton').addEventListener('click', function () {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('idConfirmationModal'));
+            modal.hide();
+
+            processFiles(filesToCompare.master, filesToCompare.secondary);
+        });
+
+        function processFiles(masterFile, secondaryFile) {
             const reader1 = new FileReader();
             const reader2 = new FileReader();
 
-            reader1.onload = function(event) {
+            reader1.onload = function (event) {
                 const masterData = XLSX.read(event.target.result, { type: 'binary' }).Sheets[Object.keys(XLSX.read(event.target.result, { type: 'binary' }).Sheets)[0]];
-                const masterRows = XLSX.utils.sheet_to_json(masterData, { header: 1 });
+                const masterRows = XLSX.utils.sheet_to_json(masterData, { header: 1 }).slice(1); // Exclude first row
 
-                reader2.onload = function(event) {
+                reader2.onload = function (event) {
                     const secondaryData = XLSX.read(event.target.result, { type: 'binary' }).Sheets[Object.keys(XLSX.read(event.target.result, { type: 'binary' }).Sheets)[0]];
-                    const secondaryRows = XLSX.utils.sheet_to_json(secondaryData, { header: 1 });
+                    const secondaryRows = XLSX.utils.sheet_to_json(secondaryData, { header: 1 }).slice(1); // Exclude first row
 
-                    // Compare the two files
+                    // Validate IDs in both files
+                    if (!validateIds(masterRows) || !validateIds(secondaryRows)) {
+                        alert('Comparison halted. One or more IDs are not exactly 9 characters long. Please correct the files and try again.');
+                        return;
+                    }
+
+                    // Proceed with comparison
                     const result = compareFiles(masterRows, secondaryRows);
 
+                    document.getElementById('secondaryCount').textContent = secondaryRows.length;
                     displayComparisonResult(result);
                     enableDownload(result);
                 };
+
                 reader2.readAsBinaryString(secondaryFile);
             };
+
             reader1.readAsBinaryString(masterFile);
-        });
+        }
+
 
         function compareFiles(masterData, secondaryData) {
             const result = [];
-            const processedSecondaryIds = [];
+            const masterDataMap = new Map(masterData.map(row => [normalizeId(row[0]), normalizeAmount(row[1])]));
 
-            // Process master data
-            masterData.forEach(masterRow => {
-                const masterId = masterRow[0]; // Assuming ID is in the first column
-                let masterAmount = normalizeAmount(masterRow[1]); // Normalize amount
-                let status = 'Missing';
-                let secondaryAmount = null;
+            secondaryData.forEach(secondaryRow => {
+                const secondaryId = normalizeId(secondaryRow[0]);
+                const secondaryAmount = normalizeAmount(secondaryRow[1]);
 
-                // Default masterAmount to 0.00 if not valid
-                if (isNaN(parseFloat(masterRow[1]))) {
-                    masterAmount = "0.00";
+                let status = "Does not exist";
+                let masterAmount = "0.00";
+
+                if (masterDataMap.has(secondaryId)) {
+                    masterAmount = masterDataMap.get(secondaryId);
+                    status = (masterAmount === secondaryAmount) ? "Same" : "Not the Same";
                 }
 
-                secondaryData.forEach(secondaryRow => {
-                    if (secondaryRow[0] === masterId) {
-                        secondaryAmount = normalizeAmount(secondaryRow[1]);
-                        status = (secondaryAmount === masterAmount) ? 'Same' : 'Not the Same';
-                        processedSecondaryIds.push(secondaryRow[0]);
-                    }
-                });
-
                 result.push({
-                    ID: masterId,
+                    ID: secondaryId,
                     MasterAmount: masterAmount,
-                    SecondaryAmount: secondaryAmount || "0.00",
+                    SecondaryAmount: secondaryAmount,
                     Status: status
                 });
             });
 
-            // Handle secondary data missing in master
-            secondaryData.forEach(secondaryRow => {
-                if (!processedSecondaryIds.includes(secondaryRow[0])) {
-                    const secondaryAmount = normalizeAmount(secondaryRow[1]);
-                    result.push({
-                        ID: secondaryRow[0],
-                        MasterAmount: "0.00",
-                        SecondaryAmount: secondaryAmount,
-                        Status: 'Does not exist'
-                    });
-                }
-            });
-
             return result;
         }
-        
+
+        function validateIds(data) {
+            for (let row of data) {
+                const id = row[0]?.toString();
+                if (!id || id.length !== 9) {
+                    return false; // Invalid ID found
+                }
+            }
+            return true; // All IDs are valid
+        }
+
+
+        function normalizeId(id) {
+            return id.toString().padStart(9, '0'); // Ensure 9 digits, padding with 0
+        }
 
         function normalizeAmount(amount) {
             return parseFloat(amount || 0).toFixed(2);
@@ -145,7 +178,7 @@
 
         function displayComparisonResult(result) {
             const tableBody = document.getElementById('comparisonTableBody');
-            tableBody.innerHTML = ''; // Clear previous results
+            tableBody.innerHTML = '';
 
             result.forEach(row => {
                 const tr = document.createElement('tr');
@@ -157,14 +190,13 @@
         }
 
         function enableDownload(result) {
-            // Create Excel file with the comparison result
             const ws = XLSX.utils.json_to_sheet(result);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'Comparison Results');
 
-            // Enable download button and attach click event to trigger download
-            document.getElementById('downloadButton').style.display = 'inline-block';
-            document.getElementById('downloadButton').addEventListener('click', function() {
+            const downloadButton = document.getElementById('downloadButton');
+            downloadButton.style.display = 'inline-block';
+            downloadButton.addEventListener('click', function () {
                 XLSX.writeFile(wb, 'comparison_results.xlsx');
             });
         }
