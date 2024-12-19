@@ -60,7 +60,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p>Are all IDs exactly 9 digits? If they are all 9 digits please proceed.</p>
+                    <p>Please make sure the IDs have been formatted to 9 characters.</p>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -157,19 +157,28 @@
             return result;
         }
 
+        // function validateIds(data) {
+        //     for (let row of data) {
+        //         const id = row[0]?.toString();
+        //         if (!id || id.length !== 9) {
+        //             return false; // Invalid ID found
+        //         }
+        //     }
+        //     return true; // All IDs are valid
+        // }
+
+
+        // function normalizeId(id) {
+        //     return id.toString().padStart(9, '0'); // Ensure 9 digits, padding with 0
+        // }
+
         function validateIds(data) {
-            for (let row of data) {
-                const id = row[0]?.toString();
-                if (!id || id.length !== 9) {
-                    return false; // Invalid ID found
-                }
-            }
+            
             return true; // All IDs are valid
         }
 
-
         function normalizeId(id) {
-            return id.toString().padStart(9, '0'); // Ensure 9 digits, padding with 0
+            return id.toString().trim(); // Ensure IDs are treated as strings and trim whitespace
         }
 
         function normalizeAmount(amount) {
