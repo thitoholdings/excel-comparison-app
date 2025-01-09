@@ -112,151 +112,174 @@
     <script>
         let masterData = [];
         let rememberedMasterFile = null;
-
+    
         document.getElementById('masterFile').addEventListener('change', function (event) {
             if (document.getElementById('rememberMasterFile').checked) {
                 rememberedMasterFile = event.target.files[0];
             }
             loadMasterFile(event.target.files[0]);
         });
-
+    
         document.getElementById('rememberMasterFile').addEventListener('change', function () {
             if (!this.checked) {
                 rememberedMasterFile = null;
             }
         });
-
+    
         document.getElementById('compareButton').addEventListener('click', function () {
             const masterFileInput = rememberedMasterFile || document.getElementById('masterFile').files[0];
             const secondaryFileInput = document.getElementById('secondaryFile').files[0];
-
+    
             if (!masterFileInput || !secondaryFileInput) {
                 alert('Please upload both files.');
                 return;
             }
-
+    
             // Trigger modal for confirmation
             const modal = new bootstrap.Modal(document.getElementById('idConfirmationModal'));
             modal.show();
         });
-
+    
         document.getElementById('startComparison').addEventListener('click', function () {
             const masterFileInput = rememberedMasterFile || document.getElementById('masterFile').files[0];
             const secondaryFileInput = document.getElementById('secondaryFile').files[0];
-
+    
             // Show loading message in the modal
             document.getElementById('loadingMessage').style.display = 'block';
-
+    
             // Disable UI interactions while processing
             document.getElementById('compareButton').disabled = true;
-
+    
             processFiles(masterFileInput, secondaryFileInput);
-
+    
             // Hide modal after starting comparison
             const modal = bootstrap.Modal.getInstance(document.getElementById('idConfirmationModal'));
             modal.hide();
-
+    
             // Remove backdrop manually to ensure it disappears
             document.querySelector('.modal-backdrop').remove();
         });
-
+    
         document.getElementById('searchButton').addEventListener('click', function () {
             const searchId = document.getElementById('searchIdInput').value.trim();
             if (!searchId) {
                 alert('Please enter an ID to search.');
                 return;
             }
-
+    
             const matchingRecords = masterData.filter(row => row[0].toString().trim() === searchId);
             const resultElement = document.getElementById('searchResult');
-
+    
             if (matchingRecords.length > 0) {
                 resultElement.innerHTML = `ID: ${searchId} found in the following records:`;
                 resultElement.className = 'text-success';
                 const recordsList = document.createElement('ul');
-
+    
                 matchingRecords.forEach(record => {
                     const li = document.createElement('li');
                     li.textContent = `Amount: ${record[1]}`;
                     recordsList.appendChild(li);
                 });
-
+    
                 resultElement.appendChild(recordsList);
             } else {
                 resultElement.textContent = `ID: ${searchId} does not exist in the master file.`;
                 resultElement.className = 'text-danger';
             }
         });
-
+    
         function loadMasterFile(file) {
             const reader = new FileReader();
             reader.onload = function (event) {
                 const workbook = XLSX.read(event.target.result, { type: 'binary' });
                 const sheet = workbook.Sheets[Object.keys(workbook.Sheets)[0]];
                 masterData = XLSX.utils.sheet_to_json(sheet, { header: 1 }).slice(1); // Exclude header row
-
+    
                 // Show search section
                 document.getElementById('searchSection').style.display = 'block';
                 alert('Master file loaded successfully.');
             };
             reader.readAsBinaryString(file);
         }
-
+    
         function processFiles(masterFile, secondaryFile) {
             const reader2 = new FileReader();
-
+    
             reader2.onload = function (event) {
                 const workbook2 = XLSX.read(event.target.result, { type: 'binary' });
                 const sheet2 = workbook2.Sheets[Object.keys(workbook2.Sheets)[0]];
                 const secondaryData = XLSX.utils.sheet_to_json(sheet2, { header: 1 }).slice(1); // Exclude header row
-
-                const result = compareFiles(masterData, secondaryData);
-
-                document.getElementById('secondaryCount').textContent = secondaryData.length;
+    
+                // Ensure both files have the same number of columns
+                if (masterData[0].length !== secondaryData[0].length) {
+                    alert('The files have different numbers of columns. Please check the files.');
+                    document.getElementById('compareButton').disabled = false;
+                    document.getElementById('loadingMessage').style.display = 'none';
+                    return;
+                }
+    
+                // Clean data before comparison
+                const cleanedMasterData = cleanData(masterData);
+                const cleanedSecondaryData = cleanData(secondaryData);
+    
+                const result = compareFiles(cleanedMasterData, cleanedSecondaryData);
+    
+                document.getElementById('secondaryCount').textContent = cleanedSecondaryData.length;
                 displayComparisonResult(result);
                 enableDownload(result);
-
+    
                 // Re-enable button and hide loading message after processing
                 document.getElementById('compareButton').disabled = false;
                 document.getElementById('loadingMessage').style.display = 'none';
             };
-
+    
             reader2.readAsBinaryString(secondaryFile);
         }
-
+    
+        function cleanData(data) {
+            return data.map(row => row.map(cell => {
+                if (typeof cell === 'string') {
+                    return cell.trim().replace(/[^a-zA-Z0-9.-]/g, ''); // Remove non-printable characters
+                } else if (typeof cell === 'number') {
+                    return cell.toFixed(2); // Ensure numbers have 2 decimal places
+                }
+                return cell;
+            }));
+        }
+    
         function compareFiles(masterData, secondaryData) {
             const result = [];
             const masterDataMap = new Map(masterData.map(row => [normalizeId(row[0]), normalizeAmount(row[1])]));
-
+    
             secondaryData.forEach(secondaryRow => {
                 const secondaryId = normalizeId(secondaryRow[0]);
                 const secondaryAmount = normalizeAmount(secondaryRow[1]);
-
+    
                 let status = "Does not exist";
                 let masterAmount = "N/A";
                 if (masterDataMap.has(secondaryId)) {
                     masterAmount = masterDataMap.get(secondaryId);
                     status = masterAmount === secondaryAmount ? "Match" : "Mismatch";
                 }
-
+    
                 result.push({ id: secondaryId, masterAmount, secondaryAmount, status });
             });
-
+    
             return result;
         }
-
+    
         function normalizeId(id) {
             return id.toString().trim().padStart(9, '0');
         }
-
+    
         function normalizeAmount(amount) {
             return parseFloat(amount.toString().replace(/[^0-9.-]+/g, "")).toFixed(2);
         }
-
+    
         function displayComparisonResult(result) {
             const tbody = document.getElementById('comparisonTableBody');
             tbody.innerHTML = ''; // Clear previous results
-
+    
             result.forEach(row => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
@@ -267,21 +290,22 @@
                 `;
                 tbody.appendChild(tr);
             });
-
+    
             document.getElementById('comparisonResult').style.display = 'block';
         }
-
+    
         function enableDownload(result) {
             document.getElementById('downloadButton').style.display = 'block';
-
+    
             document.getElementById('downloadButton').addEventListener('click', function () {
                 const wb = XLSX.utils.book_new();
                 const ws = XLSX.utils.json_to_sheet(result);
-
+    
                 XLSX.utils.book_append_sheet(wb, ws, 'ComparisonResult');
                 XLSX.writeFile(wb, 'ComparisonResult.xlsx');
             });
         }
     </script>
+    
 </body>
 </html>
