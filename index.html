@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="overflow-y: auto; min-height: 200px;">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +7,22 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <style>
+        /* Ensure the table container is scrollable */
+        #comparisonResult {
+            max-height: 400px !important; /* Set a height limit for scrolling */
+            overflow-y: auto !important;  /* Enable vertical scrolling */
+            margin-top: 20px !important;
+        }
+
+        /* Ensure the button stays in the top-right of the table */
+        #downloadButton {
+            position: absolute;
+            top: -70px !important;
+            right: 10px;
+            z-index: 10; /* Ensure it's on top of the table */
+        }
+    </style>
 </head>
 <body>
     <div class="container mt-5" style="max-width: 100%; overflow-x: hidden;">
@@ -47,18 +63,22 @@
                         <div id="comparisonResult" class="mt-4" style="display:none;">
                             <h5 class="text-black">Comparison Result</h5>
                             <p><strong>Secondary File Records:</strong> <span id="secondaryCount"></span></p>
-                            <table class="table table-bordered">
-                                <thead>
-                                    <tr>
-                                        <th>ID</th>
-                                        <th>Master Amount</th>
-                                        <th>Secondary Amount</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="comparisonTableBody"></tbody>
-                            </table>
-                            <button class="btn btn-success mt-3" id="downloadButton" style="display:none;">Download Results</button>
+                            <div class="position-relative">
+                                <button class="btn btn-success position-absolute top-0 end-0 m-3" id="downloadButton" style="display:none;">Download Results</button>
+                            </div>
+                            <div>
+                                <table class="table table-bordered">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Master Amount</th>
+                                            <th>Secondary Amount</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="comparisonTableBody"></tbody>
+                                </table>
+                            </div>
                         </div>
 
                     </div>
@@ -140,7 +160,6 @@
             document.querySelector('.modal-backdrop').remove();
         });
 
-
         document.getElementById('searchButton').addEventListener('click', function () {
             const searchId = document.getElementById('searchIdInput').value.trim();
             if (!searchId) {
@@ -214,57 +233,55 @@
                 const secondaryAmount = normalizeAmount(secondaryRow[1]);
 
                 let status = "Does not exist";
-                let masterAmount = "0.00";
-
+                let masterAmount = "N/A";
                 if (masterDataMap.has(secondaryId)) {
                     masterAmount = masterDataMap.get(secondaryId);
-                    status = (masterAmount === secondaryAmount) ? "Same" : "Not the Same";
+                    status = masterAmount === secondaryAmount ? "Match" : "Mismatch";
                 }
 
-                result.push({
-                    ID: secondaryId,
-                    MasterAmount: masterAmount,
-                    SecondaryAmount: secondaryAmount,
-                    Status: status
-                });
+                result.push({ id: secondaryId, masterAmount, secondaryAmount, status });
             });
 
             return result;
         }
 
         function normalizeId(id) {
-            return id.toString().trim();
+            return id.toString().trim().padStart(9, '0');
         }
 
         function normalizeAmount(amount) {
-            return parseFloat(amount || 0).toFixed(2);
+            return parseFloat(amount.toString().replace(/[^0-9.-]+/g, "")).toFixed(2);
         }
 
         function displayComparisonResult(result) {
-            const tableBody = document.getElementById('comparisonTableBody');
-            tableBody.innerHTML = '';
+            const tbody = document.getElementById('comparisonTableBody');
+            tbody.innerHTML = ''; // Clear previous results
 
             result.forEach(row => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${row.ID}</td><td>${row.MasterAmount}</td><td>${row.SecondaryAmount}</td><td>${row.Status}</td>`;
-                tableBody.appendChild(tr);
+                tr.innerHTML = `
+                    <td>${row.id}</td>
+                    <td>${row.masterAmount}</td>
+                    <td>${row.secondaryAmount}</td>
+                    <td>${row.status}</td>
+                `;
+                tbody.appendChild(tr);
             });
 
             document.getElementById('comparisonResult').style.display = 'block';
         }
 
         function enableDownload(result) {
-            const ws = XLSX.utils.json_to_sheet(result);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Comparison Results');
+            document.getElementById('downloadButton').style.display = 'block';
 
-            const downloadButton = document.getElementById('downloadButton');
-            downloadButton.style.display = 'inline-block';
-            downloadButton.addEventListener('click', function () {
-                XLSX.writeFile(wb, 'comparison_results.xlsx');
+            document.getElementById('downloadButton').addEventListener('click', function () {
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.json_to_sheet(result);
+
+                XLSX.utils.book_append_sheet(wb, ws, 'ComparisonResult');
+                XLSX.writeFile(wb, 'ComparisonResult.xlsx');
             });
         }
     </script>
-
 </body>
 </html>
